@@ -1,0 +1,3 @@
+def clean_text(text):
+    # 格式化文本
+    ...
