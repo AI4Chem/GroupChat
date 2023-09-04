@@ -1,6 +1,4 @@
 
-Here is an English version of the README for this virtual chatbot project:
-
 # GroupChat
 
 GroupChat is a research project to simulate team collaboration and social behaviors in an enterprise through multi-agent conversation.
