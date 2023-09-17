@@ -1,1 +1,0 @@
-        # self.assist_agent = self.Add_new_agent("Assistant",f"你正在help @Big_boss to found a new company,公司的目的是{self.total_mission},你需要高效的推进招兵买马,定制计划,开展建设工作",additional_tool=self.get_special_tools("founder"))
