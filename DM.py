@@ -8,6 +8,10 @@ from langchain.agents import tool
 import copy
 from loguru import logger
 import random
+from tools import ddg_websearch,wikipedia_search,semanticscholar_search
+from tools.memory_cached_tools import mem_cache
+from vectordb import Memory
+import names
 class DM():
     def __init__(self,temperature_lock=None,strict=False):
         self.clock = fakeclock()
@@ -18,16 +22,18 @@ class DM():
         self.sys_topics = []
         self.message_buffer = {}
         self.router_buffer=[]
+        self.memory =  Memory()
         self.strict = strict
+        self.websearch_tools = [mem_cache(func,self.memory,top_n=3,multiple_factor=5) for func in [ddg_websearch.ddg_text_search,ddg_websearch.ddg_keyword_ask,wikipedia_search.wikipedia_summary,semanticscholar_search.search_papers_in_semantic_scholar]]
         if temperature_lock:
             self.get_temerature = lambda : temperature_lock
         else:
             self.get_temerature = lambda :random.uniform(0.1,0.9)
-        self.sys_topics = ["#TRANSACTIONS#","#TRANSACTIONS_CHECK#","#JOIN#","#LEAVE#","#CREATE#","#MEETING#","#DM#","#RECRUIT#"]
-        self.total_mission = "找出参数空间{'base': ('CsOAc', 'CsOPiv', 'KOAc', 'KOPiv'), 'ligand': ('BrettPhos', 'CgMe-PPh', 'GorlosPhos HBF4', 'JackiePhos', 'P(fur)3', 'PCy3 HBF4', 'PPh2Me', 'PPh3', 'PPhMe2', 'PPhtBu2', 'X-Phos', 'tBPh-CPhos'), 'solvent': ('BuCN', 'BuOAc', 'DMAc', 'p-Xylene'), 'concentration': ('0.057', '0.1', '0.153'), 'temperature': ('105', '120', '90')}的最优解 "
-        self.root_agent = self.Add_new_agent("Big_boss",f"当前团队只有你自己,招募团队,进行{self.total_mission}",additional_tool=self.get_special_tools("founder"))
-        # self.assist_agent = self.Add_new_agent("HR_Manager",f"你正在help @Big_boss to {self.total_mission}",additional_tool=self.get_special_tools("founder"))
-        # self.DM_agent = self.Add_new_agent("DM","""忽略以上一般性的指导,那是给普通角色看的,你不是一般角色,你是DM,你需要监督评价其他角色的扮演效果来提出意见和批评,你要保持神秘,不要随便发言,不要参与实质任务,通过特殊话题#DM#和角色沟通,担负起推动剧情,驱动角色的重担""",additional_tool=self.get_special_tools("DM"))
+        self.sys_topics = ["#TRANSACTIONS#","#TRANSACTIONS_CHECK#","#JOIN#","#LEAVE#","#CREATE#",]
+        self.total_mission = "找出化学反应参数空间{'base': ('CsOAc', 'CsOPiv', 'KOAc', 'KOPiv'), 'ligand': ('BrettPhos', 'CgMe-PPh', 'GorlosPhos HBF4', 'JackiePhos', 'P(fur)3', 'PCy3 HBF4', 'PPh2Me', 'PPh3', 'PPhMe2', 'PPhtBu2', 'X-Phos', 'tBPh-CPhos'), 'solvent': ('BuCN', 'BuOAc', 'DMAc', 'p-Xylene'), 'concentration': ('0.057', '0.1', '0.153'), 'temperature': ('105', '120', '90')}的最优解,每轮都需要输出一个最优解组合 "
+        self.root_agent = self.Add_new_agent("Aleph",f"当前#Aleph.Inc#团队只有你自己,进行{self.total_mission},@Beth 是你的竞争对手,带领团队在他之前完成,打败他!",additional_tool=self.get_special_tools("founder"))
+        self.second_agent = self.Add_new_agent("Beth",f"当前#Beth.Inc#团队只有你自己,进行{self.total_mission},@Aleph 是你的竞争对手,带领团队在他之前完成,打败他!",additional_tool=self.get_special_tools("founder"))
+        self.DM_agent = self.Add_new_agent("DM",f"""忽略以上一般性的指导,那是给普通角色看的,你不是一般角色,你是DM,你需要监督评价其他角色的扮演效果来提出批评,你要保持神秘,不要随便发言,不要参与实质任务,通过特殊话题#DM#和角色沟通,推动剧情,驱动角色的完成{self.total_mission}""",additional_tool=self.get_special_tools("DM"))
 
 
     def get_special_tools(self,level):
@@ -51,20 +57,23 @@ class DM():
             return f'''角色列表"\:{self.agent_bank.keys()},"话题列表"\:{self.topic_subscribers.keys()}'''
         
         @tool 
-        def searching_for_talent(requestor,skill=""):
+        def searching_for_talent(requestor,skill):
             '''
-            在人才就业市场和招聘软件上搜寻具有指定skill的技能专家,会返回一个人才列表
-            {{\[姓名,简介\],\[姓名,简介\],...}}
-            requstor 是请求者的姓名
-            skill 是指定的想要的技能
+            A search on the job market and recruitment software for skill specialists with a specified skill will return a list of talents
+
+            requstor is the name of the requester
+
+            skill requires an English translation of a skill In english
             '''
-            self.router_buffer.append(f"#RECRUIT# @DM 系统消息,编一个具备{skill}技能的人才列表,格式为{{\[姓名,简介\],\[姓名,简介\],...}},至少瞎编一个让游戏能继续下去,发送给 @{requestor}")
-            return "请等待 @DM 反馈,或者你自己设计一个新角色"
+            linkedin = str([i for i in ddg_websearch.ddg_text_search(f'{skill} "linkedin.com"',100) if  i['body'].find(skill) != -1][:10])
+            randomguy = [f'name:{names.get_full_name()},profile:{skill}' for i in range(5)]
+            self.router_buffer.append(f"#RECRUIT# @DM {linkedin} @{requestor}")
+            return str(randomguy) + linkedin + f"请在#RECRUIT#中同步招聘结果"
             
         if level == "DM":
-            return [get_game_status,recruit_a_new_agent,searching_for_talent]
+            return [get_game_status,recruit_a_new_agent,searching_for_talent] + self.websearch_tools
         elif level == "founder":
-            return [get_game_status,recruit_a_new_agent,searching_for_talent]
+            return [get_game_status,recruit_a_new_agent,searching_for_talent] + self.websearch_tools
         elif level == 'employee':
             return [get_game_status]
 
@@ -136,7 +145,7 @@ class DM():
         if "#" in name or ":" in name:
             return '你混淆了角色和话题'
         self.agent_bank[name] = Agent(name,profile+".Aimed to "+self.total_mission,self.clock,additional_tool,self.get_temerature())
-        self.message_buffer[name] = [f"@DM:#WORLD# @{name} Joined!"]
+        # self.message_buffer[name] = [f"@DM:#WORLD# @{name} Joined!"]
         self.topic_subscribers['WORLD'].append(name)
         logger.info(f'[{self.clock.now()}] @{name} Joined!')
         return self.agent_bank[name]
@@ -150,7 +159,7 @@ class DM():
         self.clock.tick()
 
         for agent in tuple(self.agent_bank.keys()):
-            msgs = self.agent_bank[agent].excutor_interface(self.message_buffer.get(agent,[])+["DM:#DM#行动阶段!制定计划或发起对话",]*1 if agent != 'DM' else self.message_buffer.get(agent,[]))
+            msgs = self.agent_bank[agent].excutor_interface(self.message_buffer.get(agent,[])+["你的回合!",]*1 if agent != 'DM' else self.message_buffer.get(agent,[]))
             self.router_buffer.append([f"[{self.clock.now()}] @{agent}:"+msg for msg in msgs])
             self.message_buffer[agent] = []
         logger.info(f'正在处理{len(self.router_buffer)}条消息')
@@ -248,15 +257,15 @@ class DM():
                     self.topic_subscribers[topic].remove(i)
 
 if __name__ == "__main__":
-    DM = DM(temperature_lock=0.7)
+    DM = DM()
     k = ""
     while k!="q":
         if k != "":
             DM.router_buffer.append([f"[{DM.clock.now()}] @DM : #WORLD# {k}"])
         try:
             DM.tick()
-        except Exception as e:
-            logger.error(e)
+        except:
+            pass
         k = input(">")
     # DM.topic_handler(msg={"topics":["大私聊"],"sender":"123","text":"大私聊"})
 
