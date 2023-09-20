@@ -5,7 +5,6 @@ from langchain.schema import SystemMessage
 from langchain.agents import OpenAIFunctionsAgent
 from langchain.agents import AgentExecutor
 from vectordb import Memory
-from agent_profile import Profiling
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import tool
 import json
