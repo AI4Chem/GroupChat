@@ -15,8 +15,9 @@ from tools.memory_cached_tools import mem_cache
 
 
 class DM():
-    def __init__(self,temperature_lock=None,strict=False,total_mission=''):
+    def __init__(self,temperature_lock=None,strict=False,total_mission='',openai_key="",agent_cap=5):
         self.clock = fakeclock()
+        self.api_key = openai_key
         self.agent_bank = {}
         self.handlers_bank = {}
         self.topic_subscribers = {}
@@ -27,6 +28,7 @@ class DM():
         self.assets_bank = {}
         self.access_bank = {}
         self.memory =  Memory()
+        self.agent_cap = agent_cap
         self.strict = strict
         self.websearch_tools = [mem_cache(func,self.memory,top_n=3,multiple_factor=5) for func in [ddg_websearch.ddg_text_search,ddg_websearch.ddg_keyword_ask,wikipedia_search.wikipedia_summary,semanticscholar_search.search_papers_in_semantic_scholar]]
         if temperature_lock:
@@ -35,8 +37,8 @@ class DM():
             self.get_temerature = lambda :random.uniform(0.1,0.9)
         self.sys_topics = ["CREATE_TOPIC","JOIN_TOPIC","LEAVE_TOPIC","SEND",'REVOKE','GRANT']
         self.total_mission = total_mission
-        self.root_agent = self.Add_new_agent("Aleph",f"设定您的角色，扮演您的角色，虚构新的角色，推动任务解决。"+total_mission,additional_tool=self.get_special_tools("founder"))
-        self.second_agent = self.Add_new_agent("Beth",f"设设定您的角色，扮演您的角色，虚构新的角色，推动任务解决。"+total_mission,additional_tool=self.get_special_tools("founder"))
+        self.root_agent = self.Add_new_agent("Aleph","执行"+total_mission,additional_tool=self.get_special_tools("founder"))
+        # self.second_agent = self.Add_new_agent("Beth",f"设设定您的角色，扮演您的角色，招募新的角色，推动任务解决。"+total_mission,additional_tool=self.get_special_tools("founder"))
         # self.DM_agent = self.Add_new_agent("DM",f"""忽略以上一般性的指导,那是给普通角色看的,你不是一般角色,你是DM,你需要监督评价其他角色的扮演效果来提出批评,通过特殊话题#DM#和角色沟通,推动剧情,驱动角色，指挥他们完成{self.total_mission}""",additional_tool=self.get_special_tools("DM"))
 
 
@@ -49,7 +51,7 @@ class DM():
             profile：简单介绍
             liege:上级主管者
             '''
-            return self.Add_new_agent(name,profile,liege)
+            return f'{len(self.agent_bank)} of {self.agent_cap} used.',self.Add_new_agent(name,profile,liege)
         @tool
         def get_game_status():
             '''
@@ -57,7 +59,7 @@ class DM():
             角色列表
             话题列表
             '''
-            return f'''角色列表"\:{self.agent_bank.keys()},"话题列表"\:{self.topic_subscribers.keys()}'''
+            return f'{len(self.agent_bank)} of {self.agent_cap} used.',f'''角色列表"\:{self.agent_bank.keys()},"话题列表"\:{self.topic_subscribers.keys()}'''
         
         @tool 
         def searching_for_talent(feature):
@@ -69,7 +71,7 @@ class DM():
             # linkedin = str([i for i in ddg_websearch.ddg_text_search(f'{skill} "linkedin.com"',100) if  i['body'].find(skill) != -1][:10])
             randomguy = [f'name:{names.get_full_name()},profile:{feature}' for i in range(5)]
             self.router_buffer.append(f"#RECRUIT# @DM: {randomguy} ")
-            return str(randomguy) + linkedin + f"请在#RECRUIT#中同步招聘结果"
+            return f'{len(self.agent_bank)} of {self.agent_cap} used.'+str(randomguy) + linkedin + f"请在#RECRUIT#中同步招聘结果"
             
         if level == "DM":
             return [get_game_status,recruit_a_new_agent,searching_for_talent]
@@ -120,8 +122,6 @@ class DM():
             parameters = re.findall(r"\$(.*?)\$", text)
             if topics == [] and self.strict == False:
                 topics = ['WORLD']
-            else:
-                self.message_buffer.setdefault(sender[0],[]).append(f"消息中缺少话题频道标签，系统强制丢弃!")
             ans = {"time":timing,"sender":sender,"topics": topics, "mentions": mentions,"parameters":parameters,"text":text}
             for k,v in ans.items():
                 if k == 'text':
@@ -133,6 +133,8 @@ class DM():
 
 
     def Add_new_agent(self,name,profile,liege="",additional_tool=[]):
+        if len(self.agent_bank) >= self.agent_cap:
+            return "角色已满"
         # 获取所有标点符号
         punctuations = string.punctuation + " "
 
@@ -147,7 +149,7 @@ class DM():
             return '角色已存在'
         if "#" in name or ":" in name:
             return '你混淆了角色和话题'
-        self.agent_bank[name] = Agent(name,profile,self.clock,additional_tool,liege,temperature=self.get_temerature())
+        self.agent_bank[name] = Agent(name,profile,self.clock,additional_tool,liege,temperature=self.get_temerature(),openai_api_key=self.api_key)
         # self.message_buffer[name] = [f"@DM:#WORLD# @{name} Joined!"]
         # self.router_buffer.append("@DM:#WORLD# @{name} Joined!请介绍你的任务与目的！")
         for i in ['WORLD','RECRUIT']:
@@ -168,7 +170,7 @@ class DM():
         self.buffer_topic_msg_integrate()
         self.clock.tick()
         for agent in tuple(self.agent_bank.keys()):
-            msgs = self.agent_bank[agent].excutor_interface(self.message_buffer.get(agent,[])+["你决定...",]*1 )
+            msgs = self.agent_bank[agent].excutor_interface(self.message_buffer.get(agent,[])+["你的回合！",]*1 )
             self.router_buffer.append([f"[{self.clock.now()}] @{agent}:"+msg for msg in msgs])
             self.message_buffer[agent] = []
     def topic_handler(self,msg):
@@ -272,15 +274,22 @@ class DM():
             self.topic_subscribers[topic] = list(set(subscribers))
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('openai_api_key', type=str, help='API Key for OpenAI.',default="")
+    parser.add_argument('--strict', action='store_true', default=False, help='Enbale strict mode')
+    parser.add_argument("--agent_cap",type=int,help="Max number of agents",default=5)
+    args = parser.parse_args()
     # total_mission = "参加一场无固定剧本，考验角色临场发挥，即兴表演、剧情创作能力和幽默感的角色扮演话剧。一个因为雪崩而交通隔绝的度假山庄里，突然出现了一具死尸，而很不幸你是嫌疑最大的那个 "
-    total_mission = input("游戏主题是：")
-    DM = DM(total_mission=total_mission,strict=True)
+    total_mission = input("What's the game for：")
+    dm = DM(total_mission=total_mission,strict=args.strict,openai_key=args.openai_api_key,agent_cap=args.agent_cap)
     k = ""
     while k!="q":
         if k != "":
-            DM.router_buffer.append([f"[{DM.clock.now()}] @DM : #WORLD# {k}"])
+            dm.router_buffer.append([f"[{dm.clock.now()}] @DM : #WORLD# {k}"])
         try:
-            DM.tick()
+            dm.tick()
         except:
             pass
         k = input(">")
