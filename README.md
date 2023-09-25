@@ -42,7 +42,7 @@ GroupChat是一个通过话题-即时消息驱动的多AI智能体模拟人类�
 
 ```
 python ./DM.py
-默认positional 参数：openai_api_key
+--openai_api_key OpenAI的key
 --strict 启用严格模式，约束智能体幻觉行为，但是可能会降低沟通效率
 --agent_cap:智能体创建上限
 ```
